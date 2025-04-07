@@ -35,7 +35,7 @@ As the latest version of `mujoco-py` is not compatible for Windows explicitly, y
 
 ### 3. Remotely on Google Colab
 
-Alternativelyt, you may also complete the project on [Google Colab](https://colab.research.google.com/):
+Alternatively, you may also complete the project on [Google Colab](https://colab.research.google.com/):
 
 - Download the files contained in the `colab_template` folder in this repo.
 - Load the `.ipynb` files on [https://colab.research.google.com/](colab) and follow the instructions on each script to run the experiments.
