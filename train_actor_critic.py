@@ -5,8 +5,8 @@ import torch
 import gym
 
 from env.custom_hopper import *
-from agent import Agent as REINFORCEAgent, Policy as REINFORCEPolicy
-from agent_actor_critic import Agent as ACAgent, Policy as ACPolicy
+from agent_actor_critic import Agent, Policy
+
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -14,7 +14,6 @@ def parse_args():
     parser.add_argument('--device', default='cpu', type=str, help='network device [cpu, cuda]')
     parser.add_argument('--render', default=False, action='store_true', help='Render the simulator')
     parser.add_argument('--episodes', default=10, type=int, help='Number of test episodes')
-    parser.add_argument('--type', default='reinforce', type=str, help='Model type: reinforce or actor-critic')
 
     return parser.parse_args()
 
@@ -28,37 +27,31 @@ def main():
 	print('Action space:', env.action_space)
 	print('State space:', env.observation_space)
 	print('Dynamics parameters:', env.get_parameters())
-	
+
 	observation_space_dim = env.observation_space.shape[-1]
 	action_space_dim = env.action_space.shape[-1]
 
-	if args.type == 'reinforce':
-		policy = REINFORCEPolicy(observation_space_dim, action_space_dim)
-		agent = REINFORCEAgent(policy, device=args.device)
-	else:  # actor-critic
-		policy = ACPolicy(observation_space_dim, action_space_dim)
-		agent = ACAgent(policy, device=args.device)
+	policy = Policy(observation_space_dim, action_space_dim)
+    policy.load_state_dict(torch.load(args.model), strict=True)
 
-	policy.load_state_dict(torch.load(args.model), strict=True)
+	agent = Agent(policy, device=args.device)
 
-	for episode in range(args.episodes):
+    for episode in range(args.episodes):
 		done = False
-		test_reward = 0
-		state = env.reset()
+        test_reward = 0
+        state = env.reset()
 
-		while not done:
-
-			action, _ = agent.get_action(state, evaluation=True)
+        while not done:
+            action, _ = agent.get_action(state, evaluation=True)
 
 			state, reward, done, info = env.step(action.detach().cpu().numpy())
 
-			if args.render:
-				env.render()
+            if args.render:
+                env.render()
 
-			test_reward += reward
+            test_reward += reward
 
-		print(f"Episode: {episode} | Return: {test_reward}")
-	
+        print(f"Episode: {episode} | Return: {test_reward}")
 
 if __name__ == '__main__':
 	main()

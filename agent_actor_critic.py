@@ -33,7 +33,17 @@ class Policy(torch.nn.Module):
         init_sigma = 0.5
         self.sigma = torch.nn.Parameter(torch.zeros(self.action_space)+init_sigma)
 
+
+        """
+            Critic network
+        """
+        self.fc1_critic = torch.nn.Linear(state_space, self.hidden)
+        self.fc2_critic = torch.nn.Linear(self.hidden, self.hidden)
+        self.fc3_critic = torch.nn.Linear(self.hidden, 1)  # Outputs a single value
+
+
         self.init_weights()
+
 
     def init_weights(self):
         for m in self.modules():
@@ -41,23 +51,35 @@ class Policy(torch.nn.Module):
                 torch.nn.init.normal_(m.weight)
                 torch.nn.init.zeros_(m.bias)
 
+
     def forward(self, x):
+        """
+            Actor
+        """
         x_actor = self.tanh(self.fc1_actor(x))
         x_actor = self.tanh(self.fc2_actor(x_actor))
         action_mean = self.fc3_actor_mean(x_actor)
 
         sigma = self.sigma_activation(self.sigma)
         normal_dist = Normal(action_mean, sigma)
+
+
+        """
+            Critic
+        """
+        x_critic = self.tanh(self.fc1_critic(x))
+        x_critic = self.tanh(self.fc2_critic(x_critic))
+        value = self.fc3_critic(x_critic)
+
         
-        return normal_dist
+        return normal_dist, value
 
 
 class Agent(object):
-    def __init__(self, policy, device='cpu', baseline=20.0):
+    def __init__(self, policy, device='cpu'):
         self.train_device = device
         self.policy = policy.to(self.train_device)
         self.optimizer = torch.optim.Adam(policy.parameters(), lr=1e-3)
-        self.baseline = baseline
 
         self.gamma = 0.99
         self.states = []
@@ -70,35 +92,48 @@ class Agent(object):
     def update_policy(self):
         action_log_probs = torch.stack(self.action_log_probs, dim=0).to(self.train_device).squeeze(-1)
         states = torch.stack(self.states, dim=0).to(self.train_device).squeeze(-1)
+        next_states = torch.stack(self.next_states, dim=0).to(self.train_device).squeeze(-1)
         rewards = torch.stack(self.rewards, dim=0).to(self.train_device).squeeze(-1)
+        done = torch.Tensor(self.done).to(self.train_device)
 
-        self.states, self.action_log_probs, self.rewards = [], [], []
+        self.states, self.next_states, self.action_log_probs, self.rewards, self.done = [], [], [], [], []
 
-        # Compute discounted returns
-        returns = discount_rewards(rewards, self.gamma)
+        # Get value estimates for current states and next states
+        _, current_values = self.policy(states)
+        with torch.no_grad():
+            _, next_values = self.policy(next_states)
         
-        # Normalize returns for better training stability
-        returns = (returns - returns.mean()) / (returns.std() + 1e-8)
+        # Compute TD targets
+        td_targets = rewards + self.gamma * next_values.squeeze(-1) * (1 - done)
         
-        # Subtract baseline
-        returns = returns - self.baseline
+        # Compute advantages (TD errors)
+        advantages = td_targets - current_values.squeeze(-1)
         
-        # Compute policy gradient loss
-        policy_loss = -(action_log_probs * returns).mean()
+        # Normalize advantages for better training stability
+        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+        
+        # Compute actor (policy) loss
+        actor_loss = -(action_log_probs * advantages).mean()
+        
+        # Compute critic (value) loss
+        critic_loss = F.mse_loss(current_values.squeeze(-1), td_targets)
+        
+        # Total loss
+        total_loss = actor_loss + 0.5 * critic_loss  # 0.5 is a weight factor for critic loss
         
         # Update the policy
         self.optimizer.zero_grad()
-        policy_loss.backward()
+        total_loss.backward()
         self.optimizer.step()
 
-        return policy_loss.item()
+        return total_loss.item()
 
 
     def get_action(self, state, evaluation=False):
         x = torch.from_numpy(state).float().to(self.train_device)
-
-        normal_dist = self.policy(x)
-
+        
+        normal_dist, _ = self.policy(x)  # We don't need the value estimate here
+        
         if evaluation:
             return normal_dist.mean, None
         else:

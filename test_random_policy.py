@@ -28,10 +28,10 @@ def main():
 	print('Dynamics parameters:', env.get_parameters()) # masses of each link of the Hopper
 
 	n_episodes = 500
-	render = True
+	render = True	
 
 	for episode in range(n_episodes):
-		done = False
+		done = False	
 		state = env.reset()	# Reset environment to initial state
 
 		while not done:  # Until the episode is over
