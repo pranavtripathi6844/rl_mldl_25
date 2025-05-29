@@ -1,19 +1,18 @@
-"""Test an RL agent on the OpenAI Gym Hopper environment"""
+"""Train an RL agent on the OpenAI Gym Hopper environment using Actor-Critic"""
 import argparse
 
 import torch
 import gym
 
 from env.custom_hopper import *
-from agent_actor_critic import Agent, Policy
+from agent import ActorCriticAgent, Policy, Value
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model', default=None, type=str, help='Model path')
+    parser.add_argument('--n-episodes', default=100000, type=int, help='Number of training episodes')
+    parser.add_argument('--print-every', default=20000, type=int, help='Print info every <> episodes')
     parser.add_argument('--device', default='cpu', type=str, help='network device [cpu, cuda]')
-    parser.add_argument('--render', default=False, action='store_true', help='Render the simulator')
-    parser.add_argument('--episodes', default=10, type=int, help='Number of test episodes')
 
     return parser.parse_args()
 
@@ -21,37 +20,49 @@ args = parse_args()
 
 
 def main():
-	env = gym.make('CustomHopper-source-v0')
-	# env = gym.make('CustomHopper-target-v0')
+    env = gym.make('CustomHopper-source-v0')
+    # env = gym.make('CustomHopper-target-v0')
 
-	print('Action space:', env.action_space)
-	print('State space:', env.observation_space)
-	print('Dynamics parameters:', env.get_parameters())
+    print('Action space:', env.action_space)
+    print('State space:', env.observation_space)
+    print('Dynamics parameters:', env.get_parameters())
+    print("Training Actor-Critic")
 
-	observation_space_dim = env.observation_space.shape[-1]
-	action_space_dim = env.action_space.shape[-1]
+    """
+        Training
+    """
+    observation_space_dim = env.observation_space.shape[-1]
+    action_space_dim = env.action_space.shape[-1]
 
-	policy = Policy(observation_space_dim, action_space_dim)
-    policy.load_state_dict(torch.load(args.model), strict=True)
+    policy = Policy(observation_space_dim, action_space_dim)
+    value = Value(observation_space_dim)
+    agent = ActorCriticAgent(policy, value, device=args.device)
 
-	agent = Agent(policy, device=args.device)
+    for episode in range(args.n_episodes):
+        done = False
+        train_reward = 0
+        state = env.reset()  # Reset the environment and observe the initial state
 
-    for episode in range(args.episodes):
-		done = False
-        test_reward = 0
-        state = env.reset()
+        while not done:  # Loop until the episode is over
+            action, action_probabilities = agent.get_action(state)
+            previous_state = state
 
-        while not done:
-            action, _ = agent.get_action(state, evaluation=True)
+            state, reward, done, info = env.step(action.detach().cpu().numpy())
 
-			state, reward, done, info = env.step(action.detach().cpu().numpy())
+            agent.store_outcome(previous_state, state, action_probabilities, reward, done)
 
-            if args.render:
-                env.render()
+            train_reward += reward
+        
+        # Update policy and value after each episode
+        policy_loss, value_loss = agent.update()
+        
+        if (episode+1)%args.print_every == 0:
+            print('Training episode:', episode)
+            print('Episode return:', train_reward)
+            print('Policy loss:', policy_loss)
+            print('Value loss:', value_loss)
 
-            test_reward += reward
-
-        print(f"Episode: {episode} | Return: {test_reward}")
+    torch.save(agent.policy.state_dict(), "model_actor_critic.mdl")
 
 if __name__ == '__main__':
-	main()
+    main()
