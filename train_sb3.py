@@ -6,12 +6,24 @@
 """
 import gym
 import numpy as np
+import argparse
 from stable_baselines3 import SAC
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.callbacks import EvalCallback
 from env.custom_hopper import *
 
+def parse_args():
+    parser = argparse.ArgumentParser(description='Train SAC on Hopper environment')
+    parser.add_argument('--episodes', type=int, default=60000,
+                      help='Number of episodes to train (default: 60000)')
+    parser.add_argument('--learning-rate', type=float, default=3e-4,
+                      help='Learning rate (default: 0.0003)')
+    return parser.parse_args()
+
 def main():
+    # Parse command line arguments
+    args = parse_args()
+    
     # Create the training environment
     train_env = gym.make('CustomHopper-source-v0')
     train_env = DummyVecEnv([lambda: train_env])
@@ -38,7 +50,7 @@ def main():
     model = SAC(
         "MlpPolicy",
         train_env,
-        learning_rate=3e-4,
+        learning_rate=args.learning_rate,
         buffer_size=1000000,
         learning_starts=1000,
         batch_size=256,
@@ -58,11 +70,11 @@ def main():
         verbose=1
     )
 
-    # Calculate total timesteps for 60,000 episodes
-    # Each episode has max 500 steps (defined in environment registration)
-    n_episodes = 60000
+    # Calculate total timesteps based on command line argument
     max_steps_per_episode = 500
-    total_timesteps = n_episodes * max_steps_per_episode  # 30,000,000 timesteps
+    total_timesteps = args.episodes * max_steps_per_episode
+
+    print(f"Training for {args.episodes} episodes ({total_timesteps} timesteps)")
 
     # Train the agent
     model.learn(
