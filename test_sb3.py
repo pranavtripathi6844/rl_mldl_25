@@ -4,6 +4,13 @@ import numpy as np
 from stable_baselines3 import SAC
 from stable_baselines3.common.vec_env import DummyVecEnv
 from env.custom_hopper import *
+import argparse
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='Test SAC on Hopper environment')
+    parser.add_argument('--episodes', type=int, default=10,
+                      help='Number of episodes to test (default: 10)')
+    return parser.parse_args()
 
 def evaluate_policy(model, env, n_eval_episodes=10):
     """
@@ -45,6 +52,9 @@ def evaluate_policy(model, env, n_eval_episodes=10):
     return np.mean(episode_rewards), np.std(episode_rewards)
 
 def main():
+    # Parse command line arguments
+    args = parse_args()
+    
     # Create and vectorize the environment
     env = gym.make('CustomHopper-source-v0')
     env = DummyVecEnv([lambda: env])
@@ -64,7 +74,7 @@ def main():
         
         # Evaluate the model
         print("\nStarting evaluation...")
-        mean_reward, std_reward = evaluate_policy(model, env)
+        mean_reward, std_reward = evaluate_policy(model, env, n_eval_episodes=args.episodes)
         
         # Print results
         print("\nEvaluation Results:")
