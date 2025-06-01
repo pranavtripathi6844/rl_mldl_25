@@ -10,6 +10,10 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Test SAC on Hopper environment')
     parser.add_argument('--episodes', type=int, default=10,
                       help='Number of episodes to test (default: 10)')
+    parser.add_argument('--model', type=str, choices=['source', 'target'], default='source',
+                      help='Which model to test (source or target)')
+    parser.add_argument('--env', type=str, choices=['source', 'target'], default='source',
+                      help='Which environment to test on (source or target)')
     return parser.parse_args()
 
 def evaluate_policy(model, env, n_eval_episodes=10):
@@ -55,30 +59,36 @@ def main():
     # Parse command line arguments
     args = parse_args()
     
-    # Create and vectorize the environment
-    env = gym.make('CustomHopper-source-v0')
+    # Create and vectorize the environment based on argument
+    env_id = f'CustomHopper-{args.env}-v0'
+    env = gym.make(env_id)
     env = DummyVecEnv([lambda: env])
     
     try:
-        # First try to load the best model
+        # Load the specified model
+        if args.model == 'source':
+            model_path = "best_model/source_model"
+        else:  # target
+            model_path = "best_model_target/best_model"
+            
         try:
-            model = SAC.load("best_model/best_model")
-            print("Loaded best model from training!")
+            model = SAC.load(model_path)
+            print(f"Loaded {args.model} model successfully!")
         except:
-            # If best model not found, try loading the final model
-            try:
-                model = SAC.load("sac_hopper")
-                print("Loaded final model from training!")
-            except:
-                raise Exception("No trained model found! Please train the model first.")
+            raise Exception(f"Could not load {args.model} model. Make sure it exists at {model_path}")
+        
+        # Print test configuration
+        print(f"\nTesting {args.model} model on {args.env} environment")
+        print(f"Running {args.episodes} episodes...")
+        print("=" * 50)
         
         # Evaluate the model
-        print("\nStarting evaluation...")
         mean_reward, std_reward = evaluate_policy(model, env, n_eval_episodes=args.episodes)
         
         # Print results
         print("\nEvaluation Results:")
         print("=" * 50)
+        print(f"Model: {args.model} → Environment: {args.env}")
         print(f"Average Reward: {mean_reward:.2f} ± {std_reward:.2f}")
         
     except Exception as e:
