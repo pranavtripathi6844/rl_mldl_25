@@ -12,14 +12,31 @@ from .mujoco_env import MujocoEnv
 
 
 class CustomHopper(MujocoEnv, utils.EzPickle):
-    def __init__(self, domain=None):
+    def __init__(self, domain=None, use_udr=False, mass_ranges=None):
         MujocoEnv.__init__(self, 4)
         utils.EzPickle.__init__(self)
 
         self.original_masses = np.copy(self.sim.model.body_mass[1:])    # Default link masses
 
+        # Set up source/target environment
         if domain == 'source':  # Source environment has an imprecise torso mass (-30% shift)
             self.sim.model.body_mass[1] *= 0.7
+
+        # === UDR parameters ===
+        self.use_udr = use_udr
+        self.mass_ranges = mass_ranges if mass_ranges is not None else {
+            'thigh': (0.7, 1.3),  # Default ±30% variation
+            'leg': (0.7, 1.3),
+            'foot': (0.7, 1.3)
+        }
+        
+        # Store original masses for UDR
+        if self.use_udr:
+            self.udr_original_masses = {
+                'thigh': self.sim.model.body_mass[2],
+                'leg': self.sim.model.body_mass[3],
+                'foot': self.sim.model.body_mass[4]
+            }
 
     def set_random_parameters(self):
         """Set random masses"""
@@ -80,11 +97,27 @@ class CustomHopper(MujocoEnv, utils.EzPickle):
 
 
     def reset_model(self):
-        """Reset the environment to a random initial state"""
+        """Reset the environment and randomize masses if UDR is enabled"""
+        if self.use_udr:
+            self._randomize_masses()
+            
         qpos = self.init_qpos + self.np_random.uniform(low=-.005, high=.005, size=self.model.nq)
         qvel = self.init_qvel + self.np_random.uniform(low=-.005, high=.005, size=self.model.nv)
         self.set_state(qpos, qvel)
         return self._get_obs()
+
+
+    def _randomize_masses(self):
+        """Randomize masses when UDR is enabled"""
+        if not self.use_udr:
+            return
+            
+        # Randomize all masses except torso
+        body_indices = {'thigh': 2, 'leg': 3, 'foot': 4}
+        for part, (min_factor, max_factor) in self.mass_ranges.items():
+            original_mass = self.udr_original_masses[part]
+            random_factor = np.random.uniform(min_factor, max_factor)
+            self.sim.model.body_mass[body_indices[part]] = original_mass * random_factor
 
 
     def viewer_setup(self):
