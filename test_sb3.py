@@ -11,8 +11,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Test SAC on Hopper environment')
     parser.add_argument('--episodes', type=int, default=10,
                       help='Number of episodes to test (default: 10)')
-    parser.add_argument('--model', type=str, choices=['source', 'target'], default='source',
-                      help='Which model to test (source or target)')
+    parser.add_argument('--model', type=str, choices=['source', 'target', 'udr'], default='source',
+                      help='Which model to test (source, target, or udr)')
     parser.add_argument('--env', type=str, choices=['source', 'target'], default='source',
                       help='Which environment to test on (source or target)')
     return parser.parse_args()
@@ -72,8 +72,10 @@ def main():
         # Set up model paths
         if args.model == 'source':
             model_path = os.path.join("best_model", "source_model.zip")
-        else:  # target
+        elif args.model == 'target':
             model_path = os.path.join("best_model_target", "best_model.zip")
+        else:  # udr
+            model_path = os.path.join("best_model_udr", "udr_model.zip")
             
         # Check if model file exists
         if not os.path.exists(model_path):
