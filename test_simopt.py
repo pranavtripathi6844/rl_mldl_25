@@ -94,7 +94,7 @@ def main():
         
         # Evaluate the model
         mean_reward, std_reward, all_rewards = evaluate_policy(
-            model, env, n_eval_episodes=args.episodes, render=args.render
+            model, env, n_episodes=args.episodes, render=args.render
         )
         
         # Print detailed results
