@@ -3,6 +3,7 @@ import argparse
 
 import torch
 import gym
+import numpy as np
 
 from env.custom_hopper import *
 from agent import Agent, Policy
@@ -44,6 +45,8 @@ def main():
         baseline = 20.0 if args.method == 'baseline' else 0.0
         agent = Agent(policy, device=args.device, baseline=baseline)
 
+    episode_returns = []  # Store returns for all episodes
+
     for episode in range(args.episodes):
         done = False
         test_reward = 0
@@ -58,7 +61,18 @@ def main():
 
             test_reward += reward
 
+        episode_returns.append(test_reward)
         print(f"Episode: {episode} | Return: {test_reward}")
+
+    # Print summary statistics
+    print("\nSummary of Results:")
+    print("=" * 40)
+    print(f"Average reward: {np.mean(episode_returns):.2f}")
+    print(f"Std deviation:  {np.std(episode_returns):.2f}")
+    print(f"Min reward:     {np.min(episode_returns):.2f}")
+    print(f"Max reward:     {np.max(episode_returns):.2f}")
+    print(f"Best episode:   {np.argmax(episode_returns)} (Reward: {np.max(episode_returns):.2f})")
+    print("=" * 40)
 
 
 if __name__ == '__main__':
