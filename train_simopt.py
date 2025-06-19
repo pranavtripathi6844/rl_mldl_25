@@ -68,7 +68,8 @@ def train_with_params(params, args):
         sde_sample_freq=-1,
         use_sde_at_warmup=False,
         tensorboard_log="./logs_simopt/",
-        verbose=1
+        verbose=1,
+        device="cuda"
     )
 
     # Calculate total timesteps

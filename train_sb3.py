@@ -92,7 +92,8 @@ def main():
             sde_sample_freq=-1,
             use_sde_at_warmup=False,
             tensorboard_log="./logs/",
-            verbose=1
+            verbose=1,
+            device="cuda"
         )
 
         # Calculate total timesteps based on command line argument
