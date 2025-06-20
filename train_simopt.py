@@ -1,8 +1,9 @@
-"""Script for training a control policy using SimOpt for adaptive domain randomization."""
-import gym
-import numpy as np
+"""Train SAC agent using SimOpt (Simulation Optimization) for adaptive domain randomization"""
 import argparse
 import os
+import torch
+import gym
+import numpy as np
 from stable_baselines3 import SAC
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.callbacks import EvalCallback
@@ -10,11 +11,13 @@ from env.custom_hopper import *
 from simopt import SimOpt
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Train SAC with SimOpt on Hopper environment')
-    parser.add_argument('--episodes', type=int, default=10000,
-                      help='Number of episodes per optimization iteration (default: 10000)')
+    parser = argparse.ArgumentParser(description='Train SAC agent using SimOpt for adaptive domain randomization')
+    parser.add_argument('--episodes', type=int, default=2000,
+                      help='Number of training episodes (default: 2000)')
     parser.add_argument('--learning-rate', type=float, default=3e-4,
                       help='Learning rate (default: 0.0003)')
+    parser.add_argument('--mass_variation', type=float, default=0.3,
+                      help='Mass variation range for UDR (e.g., 0.3 for ±30%)')
     parser.add_argument('--n-initial-points', type=int, default=5,
                       help='Number of initial random points (default: 5)')
     parser.add_argument('--n-iterations', type=int, default=20,
@@ -25,6 +28,9 @@ def parse_args():
 
 def train_with_params(params, args):
     """Train model with specific randomization parameters."""
+    # Auto-detect device (GPU if available, otherwise CPU)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    
     # Create training environment with specified parameters
     train_env = gym.make('CustomHopper-source-v0',
                         use_udr=True,
@@ -69,7 +75,7 @@ def train_with_params(params, args):
         use_sde_at_warmup=False,
         tensorboard_log="./logs_simopt/",
         verbose=1,
-        device="cuda"
+        device=device
     )
 
     # Calculate total timesteps
@@ -110,23 +116,29 @@ def evaluate_on_target(model, n_episodes=50):
     return mean_reward
 
 def main():
-    # Parse command line arguments
     args = parse_args()
+    
+    # Auto-detect device (GPU if available, otherwise CPU)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Using device: {device}")
     
     # Create directories
     os.makedirs("./best_model_simopt", exist_ok=True)
     os.makedirs("./logs_simopt", exist_ok=True)
     
-    # Define initial parameter ranges
-    initial_ranges = {
-        'thigh': (0.0, 0.3),  # ±30% variation
-        'leg': (0.0, 0.3),
-        'foot': (0.0, 0.3)
+    print("Training with SimOpt adaptive domain randomization")
+    print(f"Mass variation: ±{args.mass_variation*100:.0f}%")
+    
+    # Define mass ranges for SimOpt
+    mass_ranges = {
+        'thigh': (1-args.mass_variation, 1+args.mass_variation),
+        'leg': (1-args.mass_variation, 1+args.mass_variation),
+        'foot': (1-args.mass_variation, 1+args.mass_variation)
     }
     
     # Initialize SimOpt
     simopt = SimOpt(
-        param_ranges=initial_ranges,
+        param_ranges=mass_ranges,
         n_initial_points=args.n_initial_points,
         n_iterations=args.n_iterations,
         save_dir="./simopt_results"
@@ -146,8 +158,10 @@ def main():
     final_model = train_with_params(best_params, args)
     
     # Save final model
-    final_model.save(os.path.join("./best_model_simopt", "final_model"))
-    print("Final model saved!")
+    final_model_name = "./best_model_simopt/simopt_model"
+    print(f"Saving final model as {final_model_name}...")
+    final_model.save(final_model_name)
+    print("Final model saved successfully!")
 
 if __name__ == '__main__':
     main() 

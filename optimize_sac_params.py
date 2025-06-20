@@ -7,6 +7,7 @@ import numpy as np
 import argparse
 import os
 import json
+import torch
 from stable_baselines3 import SAC
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.callbacks import EvalCallback
@@ -32,6 +33,9 @@ def parse_args():
 
 def objective(trial, args):
     """Objective function for Optuna optimization"""
+    
+    # Auto-detect device (GPU if available, otherwise CPU)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     
     # Define hyperparameter search space with enhanced ranges
     learning_rate = trial.suggest_float('learning_rate', 1e-6, 1e-2, log=True)  # Expanded range
@@ -118,7 +122,7 @@ def objective(trial, args):
             use_sde_at_warmup=False,
             tensorboard_log=f"./optuna_tensorboard/trial_{trial.number}",
             verbose=0,
-            device="cuda",
+            device=device,
             policy_kwargs={"net_arch": net_arch}
         )
         
