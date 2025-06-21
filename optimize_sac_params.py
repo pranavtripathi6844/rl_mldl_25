@@ -48,8 +48,8 @@ def objective(trial, args):
     learning_starts = trial.suggest_categorical('learning_starts', [500, 1000, 2000])
     target_update_interval = trial.suggest_categorical('target_update_interval', [1, 2, 4])
     
-    # Add steps per episode parameter
-    steps_per_episode = trial.suggest_categorical('steps_per_episode', [300, 500, 750, 1000])
+    # Fixed steps per episode (environment determines actual episode length)
+    steps_per_episode = 500  # Fixed value, environment will determine actual length
     
     # Network architecture parameters
     net_arch = trial.suggest_categorical('net_arch', [
