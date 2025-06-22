@@ -15,9 +15,13 @@ def parse_args():
                       help='Which model to test (source, target, or udr)')
     parser.add_argument('--env', type=str, choices=['source', 'target'], default='source',
                       help='Which environment to test on (source or target)')
+    parser.add_argument('--model_path', type=str, default=None,
+                      help='Direct path to model file (overrides --model)')
+    parser.add_argument('--render', action='store_true',
+                      help='Render the environment during testing')
     return parser.parse_args()
 
-def evaluate_policy(model, env, n_eval_episodes=10):
+def evaluate_policy(model, env, n_eval_episodes=10, render=False):
     """
     Evaluate a trained policy
     
@@ -25,6 +29,7 @@ def evaluate_policy(model, env, n_eval_episodes=10):
         model: Trained SAC model
         env: Environment to evaluate on
         n_eval_episodes: Number of episodes to evaluate
+        render: Whether to render the environment
         
     Returns:
         mean_reward: Mean reward across episodes
@@ -50,8 +55,9 @@ def evaluate_policy(model, env, n_eval_episodes=10):
             total_reward += reward[0]  # [0] because env is vectorized
             steps += 1
             
-            # Render the environment
-            env.render()
+            # Render the environment if requested
+            if render:
+                env.render()
         
         episode_rewards.append(total_reward)
         episode_lengths.append(steps)
@@ -69,13 +75,20 @@ def main():
     env = DummyVecEnv([lambda: env])
     
     try:
-        # Set up model paths
-        if args.model == 'source':
-            model_path = os.path.join("best_model", "source_model.zip")
-        elif args.model == 'target':
-            model_path = os.path.join("best_model_target", "best_model.zip")
-        else:  # udr
-            model_path = os.path.join("best_model_udr", "udr_model.zip")
+        # Set up model path
+        if args.model_path:
+            # Use direct model path if provided
+            model_path = args.model_path
+            model_name = os.path.basename(model_path)
+        else:
+            # Use predefined model paths based on --model argument
+            if args.model == 'source':
+                model_path = os.path.join("best_model", "source_model.zip")
+            elif args.model == 'target':
+                model_path = os.path.join("best_model_target", "best_model.zip")
+            else:  # udr
+                model_path = os.path.join("best_model_udr", "udr_model.zip")
+            model_name = args.model
             
         # Check if model file exists
         if not os.path.exists(model_path):
@@ -83,28 +96,29 @@ def main():
             
         try:
             model = SAC.load(model_path)
-            print(f"\nSuccessfully loaded {args.model} model from: {model_path}")
+            print(f"\nSuccessfully loaded model from: {model_path}")
         except Exception as e:
             raise Exception(f"Error loading model: {str(e)}")
         
         # Print test configuration
         print("\nTest Configuration:")
         print("=" * 50)
-        print(f"Model:    {args.model}")
+        print(f"Model:    {model_name}")
         print(f"Env:      {args.env}")
         print(f"Episodes: {args.episodes}")
+        print(f"Render:   {args.render}")
         print("=" * 50)
         print("\nStarting evaluation...\n")
         
         # Evaluate the model
         mean_reward, std_reward, all_rewards = evaluate_policy(
-            model, env, n_eval_episodes=args.episodes
+            model, env, n_eval_episodes=args.episodes, render=args.render
         )
         
         # Print detailed results
         print("\nEvaluation Results:")
         print("=" * 50)
-        print(f"Model → Environment: {args.model} → {args.env}")
+        print(f"Model → Environment: {model_name} → {args.env}")
         print(f"Number of episodes: {args.episodes}")
         print(f"Average reward: {mean_reward:.2f} ± {std_reward:.2f}")
         print(f"Min reward: {min(all_rewards):.2f}")
