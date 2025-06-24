@@ -34,21 +34,16 @@ def objective(trial, args):
     # Auto-detect device
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
-    # Improved hyperparameter search spaces
-    learning_rate = trial.suggest_float('learning_rate', 1e-4, 1e-3, log=True)  # Higher range, log scale
-    buffer_size = trial.suggest_categorical('buffer_size', [100000, 500000, 1000000])  # Larger options
-    batch_size = trial.suggest_categorical('batch_size', [128, 256, 512, 1024])
-    tau = trial.suggest_float('tau', 0.001, 0.01)  # Wider range
-    gamma = trial.suggest_float('gamma', 0.95, 0.999)  # Higher range
+    # Updated hyperparameter search spaces based on user request
+    batch_size = trial.suggest_categorical('batch_size', [32, 64, 128, 256, 512, 1024])
+    gamma = trial.suggest_categorical('gamma', [0.99, 0.995, 0.999])
+    learning_rate = trial.suggest_categorical('learning_rate', [1e-2, 3e-3, 5e-3, 1e-3, 3e-4, 5e-4])
+    buffer_size = trial.suggest_categorical('buffer_size', [100_000, 500_000, 1_000_000])
+    tau = trial.suggest_categorical('tau', [0.001, 0.005, 0.01])
     train_freq = trial.suggest_categorical('train_freq', [1, 2, 4])
     gradient_steps = trial.suggest_categorical('gradient_steps', [1, 2, 4])
     learning_starts = trial.suggest_categorical('learning_starts', [500, 1000, 2000])
     target_update_interval = trial.suggest_categorical('target_update_interval', [1, 2, 4])
-    
-    # Fixed steps per episode (environment determines actual episode length)
-    steps_per_episode = 500  # Fixed value, environment will determine actual length
-    
-    # Network architecture parameters
     net_arch = trial.suggest_categorical('net_arch', [
         [64, 64],
         [128, 128], 
@@ -58,9 +53,10 @@ def objective(trial, args):
         [256, 512, 256],
         [512, 512]
     ])
-    
-    # Entropy coefficient with more options
     ent_coef = trial.suggest_categorical('ent_coef', ['auto', 0.005, 0.01, 0.02, 0.05, 0.1, 0.2])
+    
+    # Fixed steps per episode (environment determines actual episode length)
+    steps_per_episode = 500  # Fixed value, environment will determine actual length
     
     # Set up mass ranges for UDR if enabled
     mass_ranges = None
