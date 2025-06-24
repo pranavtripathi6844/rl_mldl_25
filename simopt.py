@@ -49,12 +49,20 @@ class SimOpt:
         )
         
     def _sample_random_params(self) -> Dict[str, Tuple[float, float]]:
-        """Sample random parameters within the specified ranges."""
+        """Sample random parameters within the specified ranges, ensuring safe, positive bounds."""
         params = {}
+        safe_min = 0.5
+        safe_max = 1.5
         for param, (min_val, max_val) in self.param_ranges.items():
             # Sample a random factor between min_val and max_val
             factor = np.random.uniform(min_val, max_val)
-            params[param] = (1.0 - factor, 1.0 + factor)
+            lower = max(safe_min, 1.0 - factor)
+            upper = min(safe_max, 1.0 + factor)
+            # Ensure lower < upper
+            if lower >= upper:
+                lower = safe_min
+                upper = safe_max
+            params[param] = (lower, upper)
         return params
     
     def _update_params(self, X: np.ndarray, y: np.ndarray) -> Dict[str, Tuple[float, float]]:
