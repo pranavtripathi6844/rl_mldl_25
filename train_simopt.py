@@ -57,7 +57,7 @@ def train_with_params(params, args):
     model = SAC(
         "MlpPolicy",
         train_env,
-        learning_rate=args.learning_rate,
+        learning_rate=3e-4,
         buffer_size=1000000,
         learning_starts=1000,
         batch_size=256,
@@ -75,7 +75,8 @@ def train_with_params(params, args):
         use_sde_at_warmup=False,
         tensorboard_log="./logs_simopt/",
         verbose=1,
-        device=device
+        device=device,
+        policy_kwargs={"net_arch": [256, 256]}
     )
 
     # Calculate total timesteps
