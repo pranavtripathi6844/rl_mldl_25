@@ -57,7 +57,7 @@ def evaluate_policy(model, env, n_eval_episodes=10, render=False):
             
             # Render the environment if requested
             if render:
-                env.render()
+            env.render()
         
         episode_rewards.append(total_reward)
         episode_lengths.append(steps)
@@ -82,12 +82,12 @@ def main():
             model_name = os.path.basename(model_path)
         else:
             # Use predefined model paths based on --model argument
-            if args.model == 'source':
-                model_path = os.path.join("best_model", "source_model.zip")
-            elif args.model == 'target':
-                model_path = os.path.join("best_model_target", "best_model.zip")
-            else:  # udr
-                model_path = os.path.join("best_model_udr", "udr_model.zip")
+        if args.model == 'source':
+            model_path = os.path.join("best_model", "source_model.zip")
+        elif args.model == 'target':
+            model_path = os.path.join("best_model_target", "best_model.zip")
+        else:  # udr
+            model_path = os.path.join("best_model_udr", "udr_model.zip")
             model_name = args.model
             
         # Check if model file exists

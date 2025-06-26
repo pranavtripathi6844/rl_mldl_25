@@ -133,13 +133,13 @@ def objective(trial, args):
         # Report intermediate values more frequently for better pruning
         for step in range(10000, total_timesteps + 1, 10000):
             # Train for this step
-            model.learn(
+        model.learn(
                 total_timesteps=step,
-                callback=eval_callback,
+            callback=eval_callback,
                 log_interval=1000,
                 reset_num_timesteps=False
-            )
-            
+        )
+        
             # Evaluate and report
             mean_reward = evaluate_model(model, eval_env, n_eval_episodes=10)
             trial.report(mean_reward, step=step)

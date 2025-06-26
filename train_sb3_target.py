@@ -92,29 +92,29 @@ def main():
         print("Using optimized hyperparameters")
     else:
         # Use default parameters
-        model = SAC(
-            "MlpPolicy",
-            train_env,
-            learning_rate=args.learning_rate,
-            buffer_size=1000000,
-            learning_starts=1000,
-            batch_size=256,
-            tau=0.005,
-            gamma=0.99,
-            train_freq=1,
-            gradient_steps=1,
-            action_noise=None,
-            optimize_memory_usage=False,
-            ent_coef='auto',
-            target_update_interval=1,
-            target_entropy='auto',
-            use_sde=False,
-            sde_sample_freq=-1,
-            use_sde_at_warmup=False,
-            tensorboard_log="./logs_target/",
+    model = SAC(
+        "MlpPolicy",
+        train_env,
+        learning_rate=args.learning_rate,
+        buffer_size=1000000,
+        learning_starts=1000,
+        batch_size=256,
+        tau=0.005,
+        gamma=0.99,
+        train_freq=1,
+        gradient_steps=1,
+        action_noise=None,
+        optimize_memory_usage=False,
+        ent_coef='auto',
+        target_update_interval=1,
+        target_entropy='auto',
+        use_sde=False,
+        sde_sample_freq=-1,
+        use_sde_at_warmup=False,
+        tensorboard_log="./logs_target/",
             verbose=1,
             device=device
-        )
+    )
 
     # Calculate total timesteps
     max_steps_per_episode = 500
@@ -136,4 +136,4 @@ def main():
     print("Final model saved successfully!")
 
 if __name__ == '__main__':
-    main()
+    main() 
