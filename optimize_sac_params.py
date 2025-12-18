@@ -13,12 +13,14 @@ from env.custom_hopper import *
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Optimize SAC hyperparameters using Optuna')
-    parser.add_argument('--n_trials', type=int, default=50,
-                      help='Number of optimization trials (default: 50)')
-    parser.add_argument('--optimization_episodes', type=int, default=300,
-                      help='Number of episodes per trial for optimization (default: 300)')
-    parser.add_argument('--env_type', type=str, choices=['source', 'target'], default='source',
-                      help='Environment type to optimize for (default: source)')
+    parser.add_argument('--n_trials', type=int, default=100,
+                      help='Number of optimization trials (default: 100)')
+    # In this script, `optimization_episodes` represents the total number of
+    # training timesteps per trial (e.g. 100_000), not Gym episodes.
+    parser.add_argument('--optimization_episodes', type=int, default=100_000,
+                      help='Number of training timesteps per trial (default: 100000)')
+    parser.add_argument('--env_type', type=str, choices=['source', 'target'], default='target',
+                      help='Environment type to optimize for (default: target)')
     parser.add_argument('--timeout', type=int, default=3600,
                       help='Optimization timeout in seconds (default: 3600)')
     parser.add_argument('--use_udr', action='store_true',
@@ -34,29 +36,23 @@ def objective(trial, args):
     # Auto-detect device
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
-    # Updated hyperparameter search spaces based on user request
+    # === Hyperparameter search space (reduced) ===
+    # We only search over the most important SAC hyperparameters:
+    #  - batch_size
+    #  - buffer_size
+    #  - gamma
+    #  - learning_rate
+    # All the remaining hyperparameters are kept at their SB3 defaults.
     batch_size = trial.suggest_categorical('batch_size', [32, 64, 128, 256, 512, 1024])
+    buffer_size = trial.suggest_categorical('buffer_size', [100_000, 500_000, 1_000_000])
     gamma = trial.suggest_categorical('gamma', [0.99, 0.995, 0.999])
     learning_rate = trial.suggest_categorical('learning_rate', [1e-2, 3e-3, 5e-3, 1e-3, 3e-4, 5e-4])
-    buffer_size = trial.suggest_categorical('buffer_size', [100_000, 500_000, 1_000_000])
-    tau = trial.suggest_categorical('tau', [0.001, 0.005, 0.01])
-    train_freq = trial.suggest_categorical('train_freq', [1, 2, 4])
-    gradient_steps = trial.suggest_categorical('gradient_steps', [1, 2, 4])
-    learning_starts = trial.suggest_categorical('learning_starts', [500, 1000, 2000])
-    target_update_interval = trial.suggest_categorical('target_update_interval', [1, 2, 4])
-    net_arch = trial.suggest_categorical('net_arch', [
-        [64, 64],
-        [128, 128], 
-        [256, 256],
-        [64, 128, 64],
-        [128, 256, 128],
-        [256, 512, 256],
-        [512, 512]
-    ])
-    ent_coef = trial.suggest_categorical('ent_coef', ['auto', 0.005, 0.01, 0.02, 0.05, 0.1, 0.2])
     
-    # Fixed steps per episode (environment determines actual episode length)
-    steps_per_episode = 500  # Fixed value, environment will determine actual length
+    # In the updated procedure, `optimization_episodes` is interpreted as
+    # the total number of *timesteps* per trial (e.g. 100_000), and we
+    # evaluate every 10_000 timesteps for 50 evaluation episodes.
+    total_timesteps = args.optimization_episodes
+    eval_interval = 10_000
     
     # Set up mass ranges for UDR if enabled
     mass_ranges = None
@@ -90,66 +86,52 @@ def objective(trial, args):
     os.makedirs(log_dir, exist_ok=True)
     os.makedirs(tensorboard_dir, exist_ok=True)
     
-    # Create evaluation callback
-    eval_callback = EvalCallback(
-        eval_env,
-        best_model_save_path=trial_dir,
-        log_path=log_dir,
-        eval_freq=5000,
-        deterministic=True,
-        render=False
-    )
-    
     try:
-        # Initialize SAC with trial parameters
+        # Initialize SAC with trial parameters. Only the searched
+        # hyperparameters are overridden, everything else stays at SB3 defaults.
         model = SAC(
             "MlpPolicy",
             train_env,
             learning_rate=learning_rate,
             buffer_size=buffer_size,
-            learning_starts=learning_starts,
             batch_size=batch_size,
-            tau=tau,
             gamma=gamma,
-            train_freq=train_freq,
-            gradient_steps=gradient_steps,
-            action_noise=None,
-            optimize_memory_usage=False,
-            ent_coef=ent_coef,
-            target_update_interval=target_update_interval,
-            target_entropy='auto',
-            use_sde=False,
-            sde_sample_freq=-1,
-            use_sde_at_warmup=False,
             tensorboard_log=tensorboard_dir,
             verbose=0,
             device=device,
-            policy_kwargs={"net_arch": net_arch}
         )
         
-        # Train for evaluation using steps_per_episode parameter
-        total_timesteps = args.optimization_episodes * steps_per_episode
-        
-        # Report intermediate values more frequently for better pruning
-        for step in range(10000, total_timesteps + 1, 10000):
-            # Train for this step
-        model.learn(
-                total_timesteps=step,
-            callback=eval_callback,
+        # === Training & evaluation schedule (matches report description) ===
+        # - Train for `total_timesteps` (e.g. 100_000) per trial.
+        # - Every `eval_interval` timesteps (e.g. 10_000), evaluate the policy
+        #   for 50 episodes on the target environment and report to Optuna.
+        # - Optuna's pruner can stop unpromising trials early.
+        trained_steps = 0
+        best_mean_reward = -float("inf")
+        while trained_steps < total_timesteps:
+            # Train for the next chunk of timesteps
+            next_chunk = min(eval_interval, total_timesteps - trained_steps)
+            model.learn(
+                total_timesteps=next_chunk,
                 log_interval=1000,
                 reset_num_timesteps=False
-        )
-        
-            # Evaluate and report
-            mean_reward = evaluate_model(model, eval_env, n_eval_episodes=10)
-            trial.report(mean_reward, step=step)
-            
-            # Check if trial should be pruned
+            )
+            trained_steps += next_chunk
+
+            # Evaluate and report (50 episodes as in the description)
+            mean_reward = evaluate_model(model, eval_env, n_eval_episodes=50)
+            trial.report(mean_reward, step=trained_steps)
+
+            # Simple improvement-based tracking (for analysis / logging)
+            if mean_reward > best_mean_reward:
+                best_mean_reward = mean_reward
+
+            # Let Optuna decide whether to prune this trial
             if trial.should_prune():
                 raise optuna.TrialPruned()
         
-        # Final evaluation with more episodes
-        mean_reward = evaluate_model(model, eval_env, n_eval_episodes=20)
+        # Final evaluation (again 50 episodes for consistency)
+        mean_reward = evaluate_model(model, eval_env, n_eval_episodes=50)
         
         # Save the final model for this trial
         final_model_path = os.path.join(trial_dir, f"final_model_trial_{trial.number}.zip")
@@ -162,14 +144,7 @@ def objective(trial, args):
             'learning_rate': learning_rate,
             'buffer_size': buffer_size,
             'batch_size': batch_size,
-            'tau': tau,
             'gamma': gamma,
-            'train_freq': train_freq,
-            'gradient_steps': gradient_steps,
-            'learning_starts': learning_starts,
-            'target_update_interval': target_update_interval,
-            'net_arch': net_arch,
-            'ent_coef': ent_coef,
             'model_path': final_model_path
         }
         
