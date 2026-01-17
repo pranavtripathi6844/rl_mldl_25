@@ -11,6 +11,84 @@ from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.callbacks import EvalCallback
 from env.custom_hopper import *
 
+
+class PPOStylePruner(optuna.pruners.BasePruner):
+    """
+    Custom pruner based on PPO's TrialEvalCallback strategy.
+    Uses dynamic tolerance and dual-condition pruning for robust trial management.
+    
+    Adapted from PPO optimization code to work with SAC's off-policy learning characteristics.
+    """
+    def __init__(self, initial_tolerance=50, tolerance_multiplier=0.1, patience=1, n_warmup_steps=2):
+        """
+        Args:
+            initial_tolerance: Initial absolute tolerance for reward decline
+            tolerance_multiplier: Factor to compute dynamic tolerance (e.g., 0.1 = 10% of previous reward)
+            patience: Number of tolerance violations allowed before pruning (default: 1)
+            n_warmup_steps: Number of initial evaluations before pruning starts
+        """
+        self.initial_tolerance = initial_tolerance
+        self.tolerance_multiplier = tolerance_multiplier
+        self.patience = patience
+        self.n_warmup_steps = n_warmup_steps
+        # Store violation counts per trial
+        self.violation_counts = {}
+    
+    def prune(self, study: optuna.study.Study, trial: optuna.trial.FrozenTrial) -> bool:
+        """
+        Determine whether to prune based on PPO-style dual-condition logic:
+        1. Tolerance-based: Allow limited violations of dynamic tolerance
+        2. Two-step decline: Prune if worse than both of last 2 evaluations
+        """
+        # Get intermediate values for this trial
+        intermediate_values = trial.intermediate_values
+        
+        # Need at least n_warmup_steps + 1 evaluations before pruning
+        if len(intermediate_values) <= self.n_warmup_steps:
+            return False
+        
+        # Get sorted steps
+        steps = sorted(intermediate_values.keys())
+        
+        # Need at least 3 evaluations for dual-condition check
+        if len(steps) < 3:
+            return False
+        
+        # Get current and previous values
+        current_value = intermediate_values[steps[-1]]
+        prev_value = intermediate_values[steps[-2]]
+        even_prev_value = intermediate_values[steps[-3]] if len(steps) >= 3 else prev_value
+        
+        # Initialize violation counter for this trial if not exists
+        trial_id = trial.number
+        if trial_id not in self.violation_counts:
+            self.violation_counts[trial_id] = 0
+        
+        # === Condition 1: Tolerance-based pruning (with patience) ===
+        # Dynamic tolerance: max(initial_tolerance, tolerance_multiplier × prev_reward)
+        dynamic_tolerance = max(self.initial_tolerance, self.tolerance_multiplier * abs(prev_value))
+        
+        if current_value < prev_value - dynamic_tolerance:
+            self.violation_counts[trial_id] += 1
+            
+            if self.violation_counts[trial_id] > self.patience:
+                print(f"  ✂️  Pruning trial {trial_id} (Tolerance violation #{self.violation_counts[trial_id]}): "
+                      f"Current={current_value:.2f}, Prev={prev_value:.2f}, "
+                      f"Decline={prev_value-current_value:.2f} > Tolerance={dynamic_tolerance:.2f}")
+                return True
+        
+        # === Condition 2: Two-step decline ===
+        # Prune if current is worse than BOTH of the last 2 evaluations
+        if (current_value < even_prev_value) and (current_value < prev_value):
+            print(f"  ✂️  Pruning trial {trial_id} (Two-step decline): "
+                  f"Current={current_value:.2f} < Prev={prev_value:.2f} and "
+                  f"EvenPrev={even_prev_value:.2f}")
+            return True
+        
+        # Trial survives
+        return False
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description='Optimize SAC hyperparameters using Optuna')
     parser.add_argument('--n_trials', type=int, default=100,
@@ -187,20 +265,21 @@ def main():
     os.makedirs("./optuna_logs", exist_ok=True)
     os.makedirs("./optuna_tensorboard", exist_ok=True)
     
-    # Create study with less aggressive pruner
+    # Create study with PPO-style pruner (adapted for SAC)
     study = optuna.create_study(
         direction='maximize',
         sampler=optuna.samplers.TPESampler(seed=42),
-        pruner=optuna.pruners.MedianPruner(
-            n_startup_trials=10,    # Wait 10 trials before pruning (vs 5 default)
-            n_warmup_steps=20000,   # Wait 20k steps before pruning (vs 0 default)
-            interval_steps=10000    # Check every 10k steps (vs 1 default)
+        pruner=PPOStylePruner(
+            initial_tolerance=50,      # Initial absolute tolerance
+            tolerance_multiplier=0.1,  # Dynamic: 10% of previous reward
+            patience=1,                 # Allow 1 violation before pruning
+            n_warmup_steps=2           # Wait for 2 evaluations before pruning
         )
     )
     
     # Print optimization settings
     print("="*60)
-    print("SAC HYPERPARAMETER OPTIMIZATION (IMPROVED)")
+    print("SAC HYPERPARAMETER OPTIMIZATION (PPO-STYLE PRUNING)")
     print("="*60)
     print(f"Environment: {args.env_type}")
     print(f"Trials: {args.n_trials}")
@@ -209,10 +288,12 @@ def main():
     if args.use_udr:
         print(f"UDR enabled with mass variation: ±{args.mass_variation*100:.0f}%")
     print(f"Output file: {args.output_file}")
-    print("Pruner: MedianPruner (less aggressive)")
-    print("  - Startup trials: 10")
-    print("  - Warmup steps: 20,000")
-    print("  - Interval steps: 10,000")
+    print("Pruner: PPOStylePruner (dual-condition with dynamic tolerance)")
+    print("  - Initial tolerance: 50 (absolute)")
+    print("  - Tolerance multiplier: 10% of previous reward")
+    print("  - Patience: 1 violation allowed")
+    print("  - Warmup steps: 2 evaluations")
+    print("  - Two-step decline check: enabled")
     print("="*60)
     
     # Run optimization
